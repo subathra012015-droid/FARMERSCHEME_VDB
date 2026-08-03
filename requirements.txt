@@ -1,0 +1,8 @@
+requests
+python-dotenv
+openai
+pinecone
+fastapi
+uvicorn
+gunicorn
+streamlit
