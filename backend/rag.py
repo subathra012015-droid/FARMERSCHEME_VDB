@@ -13,13 +13,7 @@ from pinecone import Pinecone
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(PROJECT_ROOT))
 
-from config.settings import (  # noqa: E402
-    CHAT_MODEL,
-    EMBED_MODEL,
-    OPENAI_API_KEY,
-    PINECONE_API_KEY,
-    PINECONE_INDEX_NAME,
-)
+from config import settings  # noqa: E402
 
 TOP_K = 5
 
@@ -56,21 +50,35 @@ LANGUAGE_INSTRUCTIONS = {
     },
 }
 
-openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
-pc = Pinecone(api_key=PINECONE_API_KEY) if PINECONE_API_KEY else None
+openai_client = None
+pc = None
 
 # Lazy load index to handle missing index gracefully
 _index = None
 _index_error = None
 
 
+def refresh_runtime_config():
+    global openai_client, pc
+    settings.load_settings()
+    openai_client = (
+        OpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+    )
+    pc = (
+        Pinecone(api_key=settings.PINECONE_API_KEY)
+        if settings.PINECONE_API_KEY
+        else None
+    )
+
+
 def _require_runtime_config():
+    refresh_runtime_config()
     missing = []
-    if not OPENAI_API_KEY:
+    if not settings.OPENAI_API_KEY:
         missing.append("OPENAI_API_KEY")
-    if not PINECONE_API_KEY:
+    if not settings.PINECONE_API_KEY:
         missing.append("PINECONE_API_KEY")
-    if not PINECONE_INDEX_NAME:
+    if not settings.PINECONE_INDEX_NAME:
         missing.append("PINECONE_INDEX_NAME")
     if missing:
         raise RuntimeError(
@@ -93,15 +101,15 @@ def get_index():
         )
 
     try:
-        _index = pc.Index(PINECONE_INDEX_NAME)
+        _index = pc.Index(settings.PINECONE_INDEX_NAME)
         return _index
     except Exception as e:
         _index_error = RuntimeError(
-            f"❌ Pinecone index '{PINECONE_INDEX_NAME}' not found.\n"
+            f"❌ Pinecone index '{settings.PINECONE_INDEX_NAME}' not found.\n"
             f"   Please create it in Pinecone dashboard:\n"
             f"   1. Go to https://www.pinecone.io\n"
             f"   2. Click 'Create Index'\n"
-            f"   3. Name: '{PINECONE_INDEX_NAME}', Dimension: 1536, Metric: cosine, Pod type: starter\n"
+            f"   3. Name: '{settings.PINECONE_INDEX_NAME}', Dimension: 1536, Metric: cosine, Pod type: starter\n"
             f"   Original error: {e}"
         )
         raise _index_error
@@ -115,7 +123,9 @@ def retrieve(question, top_k=TOP_K):
             "OpenAI client is unavailable. Please verify your OpenAI credentials."
         )
 
-    embedding = openai_client.embeddings.create(model=EMBED_MODEL, input=[question])
+    embedding = openai_client.embeddings.create(
+        model=settings.EMBED_MODEL, input=[question]
+    )
     question_vector = embedding.data[0].embedding
 
     results = get_index().query(
@@ -159,7 +169,7 @@ def generate_answer(question, history=None, language="auto"):
         )
 
         response = openai_client.chat.completions.create(
-            model=CHAT_MODEL,
+            model=settings.CHAT_MODEL,
             messages=messages,
         )
         answer = response.choices[0].message.content
